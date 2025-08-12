@@ -1,0 +1,269 @@
+<?php
+/*
+ * Plugin Name: Events-fetch Table
+ * Description: Learning to make table and menu in admin panel
+ * Author: Navneet Kaur
+ * Version: 1.0
+ * Text Domain: events-fetch
+ * 
+ */
+// code for the action actual working
+
+function dd($var)
+    {
+    echo '<pre>';
+    print_r($var);
+    echo '</pre>';
+
+    }
+// load the wp_list_table
+if (!class_exists('Wp_List_Table')) {
+    require_once(ABSPATH . 'wp-admin/includes/class-wp-list-table.php');
+    }
+
+// extend wp_list_table
+class Events_fetch extends Wp_List_Table
+    {
+    // define $table_data property
+    private $table_data;
+    //1. Define the column in the table
+    function get_columns()
+        {
+        $columns = array(
+            'cb' => '<input type="checkbox"/>',
+            'event_title' => __('Event Name', 'events-fetch'),
+            'display_name' => __('Username', 'events-fetch'),
+            'startdate' => __('Start Date', 'events-fetch'),
+            'enddate' => __('End Date', 'events-fetch'),
+            'adddate' => __('Created Date & Time', 'events-fetch'),
+        );
+        return $columns;
+        }
+
+    function prepare_items()
+        {
+        //data for the search form handling
+        $search = isset($_POST['s']) ? trim($_POST['s']) : '';
+        // fetch only once, with search term if given
+        $this->table_data = $this->get_data_from_database($search);
+        // data is now here
+        $columns = $this->get_columns();
+        $hidden = (is_array(get_user_meta(
+            get_current_user_id(),
+            'managetoplevel_page_my-eventscolumnshidden',
+            true
+        )))
+            ? get_user_meta(
+                get_current_user_id(),
+                'managetoplevel_page_my-eventscolumnshidden',
+                true
+            )
+            : array();
+        $sortable = $this->get_sortable_columns();
+        // $primary = 'event_title';
+        $this->_column_headers = array($columns, $hidden, $sortable);
+        // Apply sorting ONLY if user requested it
+        if (!empty($_GET['orderby']) && !empty($_GET['order'])) {
+            usort($this->table_data, array($this, 'usort_reorder'));
+            }
+        /* pagination */
+        $per_page = 7;
+        $current_page = $this->get_pagenum();
+        $total_items = count($this->table_data);
+
+        $this->table_data = array_slice($this->table_data, (($current_page - 1) * $per_page), $per_page);
+
+        $this->set_pagination_args(array(
+            'total_items' => $total_items, // total number of items
+            'per_page' => $per_page, // items to show on a page
+            'total_pages' => ceil($total_items / $per_page) // use ceil to round up
+        ));
+        // if   $this->items = []; then table will show till here but data will go in items so that it can display data
+        $this->items = $this->table_data;
+        }
+    // Function to get all the data from the database
+    function get_data_from_database($search = '')
+        {
+        global $wpdb;
+        $table = $wpdb->prefix . 'events';
+        if (!empty($search)) {
+            return $wpdb->get_results(
+                $wpdb->prepare(
+                    " SELECT e.id, e.event_title, e.startdate,e.enddate,e.adddate, u.display_name
+                        FROM {$table} AS e
+                        JOIN {$wpdb->prefix}users AS u ON e.user_id = u.ID
+                        WHERE e.event_title LIKE %s 
+                    ",
+                    '%' . $wpdb->esc_like($search) . '%'
+                ),
+                ARRAY_A
+            );
+            }
+        // return $wpdb->get_results("SELECT id,event_title,startdate,enddate,user_id from {$table}", ARRAY_A);
+        return $wpdb->get_results("
+    SELECT e.id, e.event_title, e.startdate,e.enddate,e.adddate, u.display_name
+    FROM {$table} AS e
+    JOIN {$wpdb->prefix}users AS u ON e.user_id = u.ID
+", ARRAY_A);
+
+        }
+
+    function column_default($item, $column_name)
+        {
+        switch ($column_name) {
+            case 'event_title':
+            case 'display_name':
+            case 'startdate':
+            case 'enddate':
+            case 'adddate':
+                return $item[$column_name];
+            default:
+                return print_r($item, true); // fallback for debugging
+            }
+        }
+    // code to see checkbox on front of all rows
+    function column_cb($item)
+        {
+        return sprintf(
+            '<input type="checkbox" name="event_ids[]" value="%s" />',
+            $item['id']
+        );
+        }
+    protected function get_sortable_columns()
+        {
+        $sortable_columns = array(
+            'event_title' => array('event_title', false),
+            'display_name' => array('display_name', false),
+            'startdate' => array('startdate', false),
+            'enddate' => array('enddate', false),
+            'adddate' => array('adddate', false),
+
+        );
+        return $sortable_columns;
+        }
+    function usort_reorder($a, $b)
+        {
+        // Which column to sort by (default = event_title)
+        // If no sort request, don't sort at all
+        if (empty($_GET['orderby'])) {
+            return 0; // returning 0 means "leave order as is"
+            }
+        $orderby = $_GET['orderby'];
+        // Ascending or descending? (default = asc)
+        $order = (!empty($_GET['order'])) ? $_GET['order'] : 'asc';
+        // Compare the two values
+        $result = strcmp($a[$orderby], $b[$orderby]);
+        // Reverse result if descending
+        return ($order === 'asc') ? $result : -$result;
+        }
+    function column_event_title($item)
+        {
+        $actions = array(
+            'edit' => sprintf(
+                '<a href="?page=%s&action=%s&id=%s">' . __('Edit', 'events-fetch') . '</a>',
+                $_REQUEST['page'],
+                'edit',
+                $item['id']
+            ),
+            'trash' => sprintf(
+                '<a href="?page=%s&action=%s&id=%s">' . __('Trash', 'events-fetch') . '</a>',
+                $_REQUEST['page'],
+                'trash',
+                $item['id']
+            ),
+        );
+
+        return sprintf('%1$s %2$s', $item['event_title'], $this->row_actions($actions));
+        }
+    // show the bulk actions
+    // To show bulk action dropdown
+    // To show bulk action dropdown
+    function get_bulk_actions()
+        {
+        $actions = array(
+            'edit' => __('Edit', 'events-fetch'),
+            'trash' => __('Move to Trash', 'events-fetch')
+        );
+        return $actions;
+        }
+
+    }
+
+
+// adding the events menu in the admin page 
+function events_menu_page()
+    {
+    global $events_page_hook;
+    $events_page_hook = add_menu_page(
+        'Events',        // The text to be displayed in the browser title bar when the page is active.
+        'Events',        // The text to be displayed in the admin menu.
+        'manage_options',    // The capability required to access this menu. 'manage_options' is typically for administrators.
+        'my-events',    // The unique slug for your menu page. Used in the URL.
+        'events_layout', // The function that outputs the content of your page.
+        'dashicons-admin-generic', // The URL to the icon for this menu item (Dashicon or custom URL).
+        21                    // The position in the menu order.
+    );
+    // Load screen options only on this page
+    add_action("load-$events_page_hook", 'events_screen_options');
+    }
+add_action('admin_menu', 'events_menu_page');
+
+// Step 2: Add screen options
+function events_screen_options()
+    {
+    global $events_page_hook, $table;
+
+    $screen = get_current_screen();
+
+    // Make sure we're on the Events page
+    if (!is_object($screen) || $screen->id != $events_page_hook) {
+        return;
+        }
+
+    // "Per page" option
+    $args = array(
+        'label' => __('Events per page', 'events-fetch'),
+        'default' => 10,
+        'option' => 'events_per_page'
+    );
+    add_screen_option('per_page', $args);
+
+    // Create the table instance
+    $table = new Events_fetch();
+    }
+// Step 3: Allow WordPress to save the screen option
+add_filter('set-screen-option', function ($status, $option, $value) {
+    if ('events_per_page' === $option) {
+        return (int) $value;
+        }
+    return $status;
+    }, 10, 3);
+
+function events_layout()
+    {
+    // so that no error of inclusion comes as we are laoding so it get know it is admin page
+    if (isset($_GET['action']) && $_GET['action'] === 'trash' && !empty($_GET['id'])) {
+        global $wpdb;
+        $table = $wpdb->prefix . 'events';
+        $wpdb->delete($table, array('id' => intval($_GET['id'])), array('%d'));
+        wp_redirect(admin_url('admin.php?page=' . $_REQUEST['page'] . '&trashed=1'));
+        exit;
+        }
+
+    if (isset($_GET['action']) && $_GET['action'] === 'edit' && !empty($_GET['id'])) {
+        $id = intval($_GET['id']);
+        include plugin_dir_path(__FILE__) . 'edit-event-form.php';
+        return; // Stop table output here
+        }
+    $table = new Events_fetch();
+    echo '<div class="wrap"><h2>Events fetch table</h2>';
+    echo '<form method="POST">';
+    //  prepare table 
+    $table->prepare_items();
+    //search form 
+    $table->search_box('search', 'search_id');
+    // display table
+    $table->display();
+    echo '</form></div>';
+    }
+?>
