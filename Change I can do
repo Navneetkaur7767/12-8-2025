@@ -1,0 +1,35 @@
+public static function get_filtered_events()
+{
+    global $wpdb;
+    $table_events = $wpdb->prefix . 'events';
+    $table_users  = $wpdb->prefix . 'users';
+
+    $sql = "
+        SELECT e.id, e.event_title, e.startdate, e.enddate, e.adddate, u.user_email
+        FROM {$table_events} AS e
+        JOIN {$table_users} AS u ON e.user_id = u.ID
+        WHERE 1=1
+    ";
+
+    // Start date filter
+    if (!empty($_GET['filter_start'])) {
+        $start = sanitize_text_field($_GET['filter_start']);
+        $sql .= $wpdb->prepare(" AND e.startdate >= %s", $start);
+    }
+
+    // End date filter
+    if (!empty($_GET['filter_end'])) {
+        $end = sanitize_text_field($_GET['filter_end']);
+        $sql .= $wpdb->prepare(" AND e.enddate <= %s", $end);
+    }
+
+    // Search filter
+    if (!empty($_REQUEST['s'])) {
+        $search = '%' . $wpdb->esc_like($_REQUEST['s']) . '%';
+        $sql .= $wpdb->prepare(" AND e.event_title LIKE %s", $search);
+    }
+
+    $sql .= " ORDER BY e.startdate ASC";
+
+    return $wpdb->get_results($sql, ARRAY_A);
+}
