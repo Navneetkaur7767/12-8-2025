@@ -1,0 +1,67 @@
+<?php
+if (!defined('ABSPATH')) {
+    exit;
+    }
+
+class Events_Filter
+    {
+
+    /**
+     * Render the filter form HTML
+     */
+    public static function render_form()
+        {
+        ?>
+        <div class="events-filter-form">
+            <form method="GET">
+                <input type="hidden" name="page" value="<?php echo esc_attr($_REQUEST['page']); ?>">
+                <label for="filter_start">Start Date:</label>
+                <input type="date" id="filter_start" name="filter_start"
+                  value="<?php echo esc_attr($_GET['filter_start'] ?? ''); ?>">
+
+                <label for="filter_end">End Date:</label>
+                <input type="date" id="filter_end" name="filter_end" value="<?php echo esc_attr($_GET['filter_end'] ?? ''); ?>">
+
+                <?php submit_button('Filter', '', 'filter_action', false); ?>
+            </form>
+        </div>
+        <?php
+        }
+
+    /**
+     * Return filtered events from DB
+     */
+    public static function get_filtered_events()
+        {
+        global $wpdb;
+        $table = $wpdb->prefix . 'events';
+
+        $sql = "SELECT * FROM $table WHERE 1=1";
+
+        // Start date filter
+        if (!empty($_GET['filter_start'])) {
+            $start = sanitize_text_field($_GET['filter_start']);
+            $sql .= $wpdb->prepare(" AND startdate >= %s", $start);
+            }
+        // dd($_GET['filter_start']);
+        // die;
+
+
+
+        // End date filter
+        if (!empty($_GET['filter_end'])) {
+            $end = sanitize_text_field($_GET['filter_end']);
+            $sql .= $wpdb->prepare(" AND enddate <= %s", $end);
+            }
+
+        // Search filter
+        if (!empty($_REQUEST['s'])) {
+            $search = '%' . $wpdb->esc_like($_REQUEST['s']) . '%';
+            $sql .= $wpdb->prepare(" AND event_title LIKE %s", $search);
+            }
+
+        $sql .= " ORDER BY startdate ASC";
+
+        return $wpdb->get_results($sql, ARRAY_A);
+        }
+    }
